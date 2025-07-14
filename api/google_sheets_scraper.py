@@ -18,25 +18,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class GoogleSheetsRestaurantScraper:
-    def __init__(self, maps_api_key, sheets_credentials_path, spreadsheet_id):
+    def __init__(self, maps_api_key, sheets_credentials_path=None, spreadsheet_id=None):
         """
         Google Maps ve Sheets API'lerini başlatır
         
         Args:
             maps_api_key: Google Maps API anahtarı
-            sheets_credentials_path: Service account JSON dosya yolu
-            spreadsheet_id: Google Sheets ID'si
+            sheets_credentials_path: Service account JSON dosya yolu (optional)
+            spreadsheet_id: Google Sheets ID'si (optional)
         """
         # Google Maps client
         self.gmaps = googlemaps.Client(key=maps_api_key)
         
-        # Google Sheets setup
+        # Google Sheets setup (optional)
         self.spreadsheet_id = spreadsheet_id
-        self.credentials = service_account.Credentials.from_service_account_file(
-            sheets_credentials_path,
-            scopes=['https://www.googleapis.com/auth/spreadsheets']
-        )
-        self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
+        self.sheets_service = None
+        
+        if sheets_credentials_path and spreadsheet_id:
+            try:
+                self.credentials = service_account.Credentials.from_service_account_file(
+                    sheets_credentials_path,
+                    scopes=['https://www.googleapis.com/auth/spreadsheets']
+                )
+                self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
+                logger.info("Google Sheets service initialized")
+            except Exception as e:
+                logger.warning(f"Google Sheets setup failed: {e}")
+                self.sheets_service = None
         
         logger.info("GoogleSheetsRestaurantScraper başlatıldı")
     
@@ -166,6 +174,11 @@ class GoogleSheetsRestaurantScraper:
             bool: Başarılı/başarısız
         """
         try:
+            # Check if sheets service is available
+            if not self.sheets_service:
+                logger.warning("Google Sheets service not available")
+                return False
+                
             # Veri kontrolü
             if not data or not isinstance(data, list):
                 return False

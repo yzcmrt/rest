@@ -11,7 +11,12 @@ logger = logging.getLogger(__name__)
 # Add the api directory to Python path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from google_sheets_scraper import GoogleSheetsRestaurantScraper
+# Try to import the scraper, but continue if it fails
+try:
+    from google_sheets_scraper import GoogleSheetsRestaurantScraper
+except ImportError as e:
+    logger.error(f"Failed to import GoogleSheetsRestaurantScraper: {e}")
+    GoogleSheetsRestaurantScraper = None
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
@@ -38,7 +43,7 @@ try:
         creds_path = None
         
     # Scraper'ı başlat
-    if config['maps_api_key']:
+    if config['maps_api_key'] and GoogleSheetsRestaurantScraper:
         scraper = GoogleSheetsRestaurantScraper(
             maps_api_key=config['maps_api_key'],
             sheets_credentials_path=creds_path,
