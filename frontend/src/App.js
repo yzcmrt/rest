@@ -24,7 +24,7 @@ function App() {
     fetchCities();
     fetchFoodTypes();
     loadSearchHistory();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchCities = async () => {
     try {
