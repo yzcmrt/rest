@@ -6,13 +6,12 @@ import logging
 from datetime import datetime
 import time
 
-# Logging ayarı
+# Logging ayarı - Vercel için sadece console'a log
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('scraper.log'),
-        logging.StreamHandler()
+        logging.StreamHandler()  # Sadece console'a log, dosyaya yazma
     ]
 )
 logger = logging.getLogger(__name__)
