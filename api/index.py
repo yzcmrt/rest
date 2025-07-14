@@ -60,6 +60,18 @@ def health_check():
     """API sağlık kontrolü"""
     return jsonify({"status": "healthy", "message": "Restaurant Scraper API is running"})
 
+@app.route('/api/debug', methods=['GET'])
+def debug():
+    """Debug endpoint to check configuration"""
+    return jsonify({
+        "status": "ok",
+        "python_version": sys.version,
+        "has_maps_key": bool(os.environ.get('MAPS_API_KEY')),
+        "has_sheets_creds": bool(os.environ.get('SHEETS_CREDENTIALS')),
+        "scraper_initialized": scraper is not None,
+        "GoogleSheetsRestaurantScraper_imported": GoogleSheetsRestaurantScraper is not None
+    })
+
 @app.route('/api/search', methods=['POST'])
 def search_restaurants():
     """Restoran arama endpoint'i"""
@@ -188,6 +200,9 @@ def get_food_types():
         'çiğ köfte', 'tantuni', 'kokoreç', 'midyeci', 'kumru'
     ]
     return jsonify(food_types)
+
+# For Vercel
+handler = app
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
