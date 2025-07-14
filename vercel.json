@@ -5,16 +5,14 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "destination": "/api"
     }
   ],
   "functions": {
     "api/index.py": {
-      "runtime": "python3.9"
+      "runtime": "python3.9",
+      "includeFiles": "api/**",
+      "maxDuration": 10
     }
   }
 }

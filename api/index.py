@@ -2,6 +2,15 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 import os
+import sys
+import logging
+
+# Setup logger
+logger = logging.getLogger(__name__)
+
+# Add the api directory to Python path for imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from google_sheets_scraper import GoogleSheetsRestaurantScraper
 
 app = Flask(__name__)
@@ -10,17 +19,36 @@ CORS(app)  # Enable CORS for React frontend
 # Script'in bulunduğu dizini al
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Config dosyasını yükle
-config_path = os.path.join(SCRIPT_DIR, '../backend/config.json')
-with open(config_path, 'r') as f:
-    config = json.load(f)
-
-# Scraper'ı başlat
-scraper = GoogleSheetsRestaurantScraper(
-    maps_api_key=config['maps_api_key'],
-    sheets_credentials_path=os.path.join(SCRIPT_DIR, '../backend', config['sheets_credentials_path']),
-    spreadsheet_id=config['spreadsheet_id']
-)
+# Environment variables kullan
+try:
+    config = {
+        'maps_api_key': os.environ.get('MAPS_API_KEY'),
+        'sheets_credentials': os.environ.get('SHEETS_CREDENTIALS'),
+        'spreadsheet_id': os.environ.get('SPREADSHEET_ID')
+    }
+    
+    # If credentials are JSON string, parse it
+    if config['sheets_credentials']:
+        sheets_creds = json.loads(config['sheets_credentials'])
+        # Save credentials to temp file
+        creds_path = '/tmp/credentials.json'
+        with open(creds_path, 'w') as f:
+            json.dump(sheets_creds, f)
+    else:
+        creds_path = None
+        
+    # Scraper'ı başlat
+    if config['maps_api_key']:
+        scraper = GoogleSheetsRestaurantScraper(
+            maps_api_key=config['maps_api_key'],
+            sheets_credentials_path=creds_path,
+            spreadsheet_id=config['spreadsheet_id']
+        )
+    else:
+        scraper = None
+except Exception as e:
+    print(f"Config error: {e}")
+    scraper = None
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -31,6 +59,13 @@ def health_check():
 def search_restaurants():
     """Restoran arama endpoint'i"""
     try:
+        # API key kontrolü
+        if not scraper:
+            return jsonify({
+                "success": False,
+                "error": "API yapılandırması eksik. Lütfen environment variables kontrolü yapın."
+            }), 500
+            
         data = request.get_json()
         
         # Parametreleri al
@@ -60,6 +95,7 @@ def search_restaurants():
         })
         
     except Exception as e:
+        logger.error(f"Search error: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e)
