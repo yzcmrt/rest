@@ -96,17 +96,36 @@ class handler(BaseHTTPRequestHandler):
                 return
             
             location = f"{district}, {city}"
-            restaurants = scraper.search_restaurants(location, food_type)
             
-            self.end_headers()
-            response = {
-                "success": True,
-                "data": restaurants,
-                "count": len(restaurants),
-                "location": location,
-                "foodType": food_type
-            }
-            self.wfile.write(json.dumps(response).encode())
+            # Generate sheet name
+            sheet_name = f"{district}_{food_type}".replace(' ', '_')
+            
+            # Search and save to sheets
+            result = scraper.run_search_to_sheets(location, food_type, sheet_name)
+            
+            if result['success'] and result['count'] > 0:
+                # Get the restaurant data for response
+                restaurants = scraper.search_restaurants(location, food_type)
+                
+                self.end_headers()
+                response = {
+                    "success": True,
+                    "data": restaurants,
+                    "count": len(restaurants),
+                    "location": location,
+                    "foodType": food_type,
+                    "sheetName": sheet_name,
+                    "message": result['message']
+                }
+                self.wfile.write(json.dumps(response).encode())
+            else:
+                self.end_headers()
+                response = {
+                    "success": False,
+                    "error": result['message'],
+                    "count": 0
+                }
+                self.wfile.write(json.dumps(response).encode())
             
         except Exception as e:
             self.end_headers()

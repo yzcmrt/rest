@@ -64,7 +64,7 @@ class GoogleSheetsRestaurantScraper:
         
         try:
             # Konum koordinatlarını al
-            geocode_result = self.gmaps.geocode(f"{location}, istanbul")
+            geocode_result = self.gmaps.geocode(f"{location}, Türkiye")
             if not geocode_result:
                 logger.error(f"Konum bulunamadı: {location}")
                 return restaurants
