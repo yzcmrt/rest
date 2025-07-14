@@ -29,20 +29,32 @@ try:
     
     # If credentials are JSON string, parse it
     creds_path = None
-    if config['sheets_credentials']:
-        sheets_creds = json.loads(config['sheets_credentials'])
-        # Save credentials to temp file
-        creds_path = '/tmp/credentials.json'
-        with open(creds_path, 'w') as f:
-            json.dump(sheets_creds, f)
+    if config['sheets_credentials'] and config['sheets_credentials'].strip():
+        try:
+            # Clean the credentials string (remove extra whitespace/newlines)
+            cleaned_creds = config['sheets_credentials'].strip()
+            sheets_creds = json.loads(cleaned_creds)
+            # Save credentials to temp file
+            creds_path = '/tmp/credentials.json'
+            with open(creds_path, 'w') as f:
+                json.dump(sheets_creds, f)
+            logger.info("Sheets credentials parsed successfully")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse SHEETS_CREDENTIALS: {e}")
+            logger.error(f"First 100 chars of SHEETS_CREDENTIALS: {config['sheets_credentials'][:100]}...")
+            creds_path = None
         
     # Initialize scraper
     if config['maps_api_key'] and GoogleSheetsRestaurantScraper:
+        logger.info(f"Initializing scraper with Maps API key: {config['maps_api_key'][:10]}...")
         scraper = GoogleSheetsRestaurantScraper(
             maps_api_key=config['maps_api_key'],
             sheets_credentials_path=creds_path,
             spreadsheet_id=config['spreadsheet_id']
         )
+        logger.info("Scraper initialized successfully")
+    else:
+        logger.error("Missing Maps API key or GoogleSheetsRestaurantScraper not available")
 except Exception as e:
     logger.error(f"Config error: {e}")
 
