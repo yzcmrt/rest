@@ -1,6 +1,6 @@
 {
   "buildCommand": "",
-  "outputDirectory": ".",
+  "outputDirectory": "frontend/build",
   "installCommand": "",
   "devCommand": "",
   "framework": null,
@@ -8,10 +8,6 @@
     {
       "source": "/api/(.*)",
       "destination": "/api/index.py"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/frontend/build/$1"
     }
   ]
 }
