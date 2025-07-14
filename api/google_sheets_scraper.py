@@ -1,5 +1,4 @@
 import googlemaps
-import pandas as pd
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -149,6 +148,11 @@ class GoogleSheetsRestaurantScraper:
         
         return restaurants
     
+    def _format_opening_hours(self, opening_hours):
+        """Çalışma saatlerini formatlar"""
+        if not opening_hours or 'weekday_text' not in opening_hours:
+            return 'Bilinmiyor'
+        return ', '.join(opening_hours['weekday_text'])
     
     def create_or_update_sheet(self, sheet_name, data):
         """
@@ -156,17 +160,15 @@ class GoogleSheetsRestaurantScraper:
         
         Args:
             sheet_name: Sheet adı
-            data: DataFrame veya dict listesi
+            data: dict listesi
             
         Returns:
             bool: Başarılı/başarısız
         """
         try:
-            # DataFrame'e çevir
-            if isinstance(data, list):
-                df = pd.DataFrame(data)
-            else:
-                df = data
+            # Veri kontrolü
+            if not data or not isinstance(data, list):
+                return False
             
             # Sheet var mı kontrol et
             sheets_metadata = self.sheets_service.spreadsheets().get(
@@ -193,8 +195,14 @@ class GoogleSheetsRestaurantScraper:
                 ).execute()
                 logger.info(f"Yeni sheet oluşturuldu: {sheet_name}")
             
-            # Veriyi hazırla
-            values = [df.columns.tolist()] + df.values.tolist()
+            # Veriyi hazırla - başlık satırı ve veriler
+            if data:
+                headers = list(data[0].keys())
+                values = [headers]
+                for row in data:
+                    values.append([row.get(header, '') for header in headers])
+            else:
+                values = []
             
             # Sheet'i temizle ve veriyi yaz
             range_name = f"{sheet_name}!A1"
@@ -217,7 +225,7 @@ class GoogleSheetsRestaurantScraper:
             logger.info(f"{result.get('updatedCells')} hücre güncellendi")
             
             # Formatla
-            self._format_sheet(sheet_name, len(df.columns), len(values))
+            self._format_sheet(sheet_name, len(headers) if data else 0, len(values))
             
             return True
             
