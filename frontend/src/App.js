@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 
 function App() {
@@ -6,52 +6,18 @@ function App() {
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [foodType, setFoodType] = useState('');
   const [results, setResults] = useState([]);
-  const [displayedResults, setDisplayedResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState('');
   const [cities, setCities] = useState({});
   const [foodTypes, setFoodTypes] = useState([]);
   const [saveToSheets, setSaveToSheets] = useState(false);
   const [searchHistory, setSearchHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [error, setError] = useState('');
-  const [networkError, setNetworkError] = useState(false);
   const [sortBy, setSortBy] = useState('rating'); // rating, reviewCount
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const observerRef = useRef();
-  const ITEMS_PER_PAGE = 10;
 
   const API_BASE_URL = process.env.NODE_ENV === 'production' 
     ? '/api' 
     : 'http://localhost:5000/api';
-
-  // Infinite scroll için observer callback
-  const lastResultElementRef = useCallback(node => {
-    if (loading) return;
-    if (observerRef.current) observerRef.current.disconnect();
-    
-    observerRef.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
-        setPage(prevPage => prevPage + 1);
-      }
-    });
-    
-    if (node) observerRef.current.observe(node);
-  }, [loading, hasMore]);
-
-  // Sayfa değiştiğinde daha fazla sonuç göster
-  useEffect(() => {
-    const endIndex = page * ITEMS_PER_PAGE;
-    const newDisplayedResults = results.slice(0, endIndex);
-    setDisplayedResults(newDisplayedResults);
-    setHasMore(endIndex < results.length);
-  }, [page, results]);
-
-  // Yeni arama yapıldığında sayfa numarasını sıfırla
-  useEffect(() => {
-    setPage(1);
-  }, [results]);
 
   // API'den şehirleri al
   useEffect(() => {
