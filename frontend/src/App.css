@@ -198,6 +198,75 @@ select {
   margin-top: 1rem;
 }
 
+/* Tablo stilleri */
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: #3b3b3b;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.results-table th {
+  background-color: #2a2a2a;
+  color: #61dafb;
+  padding: 1rem;
+  text-align: left;
+  font-weight: bold;
+  border-bottom: 2px solid #61dafb;
+}
+
+.results-table td {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #4a4a4a;
+  color: #f7f7f7;
+}
+
+.results-table tr:hover {
+  background-color: #4a4a4a;
+  transition: background-color 0.3s;
+}
+
+.results-table tr:last-child td {
+  border-bottom: none;
+}
+
+.results-table a {
+  color: #61dafb;
+  text-decoration: none;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid #61dafb;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.results-table a:hover {
+  background-color: #61dafb;
+  color: #282c34;
+}
+
+/* Responsive tablo */
+@media (max-width: 768px) {
+  .results-table {
+    font-size: 0.9rem;
+  }
+  
+  .results-table th,
+  .results-table td {
+    padding: 0.5rem;
+  }
+
+  /* Mobilde yatay kaydırma */
+  .results-container {
+    overflow-x: auto;
+  }
+  
+  .results-table {
+    min-width: 600px;
+  }
+}
+
 .history-item {
   background-color: #3b3b3b;
   padding: 0.8rem;

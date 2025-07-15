@@ -47,7 +47,7 @@ class GoogleSheetsRestaurantScraper:
         
         logger.info("GoogleSheetsRestaurantScraper başlatıldı")
     
-    def search_restaurants(self, location, restaurant_type, radius=5000, min_rating=4.5):
+    def search_restaurants(self, location, restaurant_type, radius=2000, min_rating=4.5):
         """
         Google Maps'te restoran arar
         
@@ -63,39 +63,61 @@ class GoogleSheetsRestaurantScraper:
         restaurants = []
         
         try:
-            # Konum koordinatlarını al
-            geocode_result = self.gmaps.geocode(f"{location}, Türkiye")
-            if not geocode_result:
-                logger.error(f"Konum bulunamadı: {location}")
-                return restaurants
+            # İlçe ve şehir bilgilerini ayır
+            location_parts = location.split(',')
+            district = location_parts[0].strip() if location_parts else location
             
-            lat_lng = geocode_result[0]['geometry']['location']
-            logger.info(f"Geocoding successful for {location}: {lat_lng}")
-            
-            # Restoran ara
-            query = f"{restaurant_type} {location}"
+            # Text search kullan - daha spesifik sonuçlar için
+            query = f"{restaurant_type} in {location}"
             logger.info(f"{location}'da {restaurant_type} aranıyor...")
-            logger.info(f"Search query: {query}, location: {lat_lng}, radius: {radius}")
+            logger.info(f"Search query: {query}")
             
-            places_result = self.gmaps.places_nearby(
-                location=lat_lng,
-                radius=radius,
-                keyword=query,
-                type='restaurant'
+            # Text search ile ara
+            places_result = self.gmaps.places(
+                query=query,
+                type='restaurant',
+                language='tr'
             )
             
-            # İlk sayfa sonuçları
-            restaurants.extend(self._extract_restaurant_info(places_result.get('results', [])))
+            # Sonuçları filtrele - sadece belirtilen ilçedeki restoranları al
+            filtered_results = []
+            for place in places_result.get('results', []):
+                # Adres kontrolü
+                address = place.get('formatted_address', '').lower()
+                if district.lower() in address:
+                    filtered_results.append(place)
             
-            # Diğer sayfalar
-            while 'next_page_token' in places_result:
-                time.sleep(2)  # API rate limit için bekleme
-                places_result = self.gmaps.places_nearby(
-                    page_token=places_result['next_page_token']
-                )
-                restaurants.extend(self._extract_restaurant_info(places_result.get('results', [])))
+            # Filtrelenmiş sonuçları işle
+            restaurants.extend(self._extract_restaurant_info(filtered_results))
             
-            logger.info(f"Toplam {len(restaurants)} restoran bulundu")
+            # Eğer yeterli sonuç yoksa, nearby search ile destekle
+            if len(restaurants) < 10:
+                # Geocode yap
+                geocode_result = self.gmaps.geocode(f"{location}, Türkiye")
+                if geocode_result:
+                    lat_lng = geocode_result[0]['geometry']['location']
+                    
+                    # Nearby search - daha küçük yarıçap ile
+                    nearby_result = self.gmaps.places_nearby(
+                        location=lat_lng,
+                        radius=radius,
+                        keyword=restaurant_type,
+                        type='restaurant'
+                    )
+                    
+                    # Nearby sonuçları da filtrele
+                    for place in nearby_result.get('results', []):
+                        address = place.get('vicinity', '').lower()
+                        place_id = place.get('place_id')
+                        # Aynı restoran eklenmemesi için kontrol
+                        if district.lower() in address and not any(r.get('place_id') == place_id for r in filtered_results):
+                            filtered_results.append(place)
+                    
+                    # Yeni sonuçları işle
+                    new_restaurants = self._extract_restaurant_info([p for p in filtered_results if p.get('place_id') not in [r.get('place_id') for r in restaurants]])
+                    restaurants.extend(new_restaurants)
+            
+            logger.info(f"Toplam {len(restaurants)} restoran bulundu ({district} içinde)")
             return restaurants
             
         except Exception as e:
