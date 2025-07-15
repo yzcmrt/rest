@@ -35,9 +35,17 @@ function App() {
       console.error('Şehirler yüklenemedi:', error);
       // Fallback değerler
       setCities({
-        'İstanbul': ['Üsküdar', 'Kadıköy', 'Beşiktaş', 'Sarıyer', 'Şişli'],
-        'Ankara': ['Çankaya', 'Keçiören', 'Mamak'],
-        'İzmir': ['Karşıyaka', 'Bornova', 'Konak']
+        'İstanbul': [
+          'Adalar', 'Arnavutköy', 'Ataşehir', 'Avcılar', 'Bağcılar', 'Bahçelievler',
+          'Bakırköy', 'Başakşehir', 'Bayrampaşa', 'Beşiktaş', 'Beykoz', 'Beylikdüzü',
+          'Beyoğlu', 'Büyükçekmece', 'Çatalca', 'Çekmeköy', 'Esenler', 'Esenyurt',
+          'Eyüpsultan', 'Fatih', 'Gaziosmanpaşa', 'Güngören', 'Kadıköy', 'Kağıthane',
+          'Kartal', 'Küçükçekmece', 'Maltepe', 'Pendik', 'Sancaktepe', 'Sarıyer',
+          'Silivri', 'Sultanbeyli', 'Sultangazi', 'Şile', 'Şişli', 'Tuzla',
+          'Ümraniye', 'Üsküdar', 'Zeytinburnu'
+        ],
+        'Ankara': ['Çankaya', 'Keçiören', 'Mamak', 'Altındağ', 'Yenimahalle', 'Etimesgut', 'Sincan', 'Pursaklar', 'Gölbaşı', 'Polatlı'],
+        'İzmir': ['Karşıyaka', 'Bornova', 'Konak', 'Çeşme', 'Alsancak', 'Buca', 'Bayraklı', 'Karabağlar', 'Balçova', 'Narlıdere']
       });
     }
   };
@@ -50,7 +58,12 @@ function App() {
     } catch (error) {
       console.error('Yemek türleri yüklenemedi:', error);
       // Fallback değerler
-      setFoodTypes(['köfteci', 'kebapçı', 'pideci', 'dondurmacı', 'balık']);
+      setFoodTypes([
+        'köfteci', 'kebapçı', 'pideci', 'lahmacun', 'dönerci', 'iskender',
+        'mantı', 'börekçi', 'gözlemeci', 'çiğ köfte', 'tantuni', 'kokoreç',
+        'balık', 'kahvaltı', 'burger', 'pizza', 'sushi', 'italyan',
+        'steakhouse', 'tatlıcı', 'dondurmacı', 'kafe', 'meyhane'
+      ]);
     }
   };
 
@@ -242,12 +255,11 @@ function App() {
             <table className="results-table">
               <thead>
                 <tr>
-                  <th>İsim</th>
-                  <th>Adres</th>
-                  <th>Puan</th>
-                  <th>Yorum Sayısı</th>
-                  <th>Telefon</th>
-                  <th>Harita</th>
+                  <th>Restoran Adı</th>
+                  <th>Adresi</th>
+                  <th>Toplam Yorum Sayısı</th>
+                  <th>Beğeni Puanı</th>
+                  <th>Google Maps URL</th>
                 </tr>
               </thead>
               <tbody>
@@ -255,9 +267,8 @@ function App() {
                   <tr key={index}>
                     <td>{restaurant.name}</td>
                     <td>{restaurant.address}</td>
-                    <td>{restaurant.rating}</td>
                     <td>{restaurant.reviewCount}</td>
-                    <td>{restaurant.phone}</td>
+                    <td>{restaurant.rating}</td>
                     <td>
                       <a 
                         href={restaurant.url} 
