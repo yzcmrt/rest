@@ -1,13 +1,19 @@
 # Restaurant Finder
 
-Restaurant arama ve listeleme uygulaması. Google Maps API kullanarak belirli bölgelerdeki restoranları arar ve listeler.
+Restaurant arama ve listeleme uygulaması. Google Maps API kullanarak belirli bölgelerdeki 4.5 puan ve üzerindeki restoranları arar ve listeler.
 
 ## Özellikler
 
 - Şehir ve ilçe bazında restoran arama
+- **İstanbul'un tüm 39 ilçesi desteklenmektedir**
 - Yemek türüne göre filtreleme
+- Minimum 4.5 puan filtresi
 - Restoran detayları (puan, adres, telefon vb.)
 - Google Sheets entegrasyonu (opsiyonel)
+
+## Desteklenen İstanbul İlçeleri
+
+Adalar, Arnavutköy, Ataşehir, Avcılar, Bağcılar, Bahçelievler, Bakırköy, Başakşehir, Bayrampaşa, Beşiktaş, Beykoz, Beylikdüzü, Beyoğlu, Büyükçekmece, Çatalca, Çekmeköy, Esenler, Esenyurt, Eyüpsultan, Fatih, Gaziosmanpaşa, Güngören, Kadıköy, Kağıthane, Kartal, Küçükçekmece, Maltepe, Pendik, Sancaktepe, Sarıyer, Silivri, Sultanbeyli, Sultangazi, Şile, Şişli, Tuzla, Ümraniye, Üsküdar, Zeytinburnu
 
 ## Teknolojiler
 
