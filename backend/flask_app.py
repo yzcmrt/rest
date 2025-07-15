@@ -48,7 +48,7 @@ def search_restaurants():
         location = f"{district}, {city}"
         
         # Google Maps'te ara (Google Sheets'e kaydetmeden)
-        restaurants = scraper.search_restaurants(district, food_type)
+        restaurants = scraper.search_restaurants(location, food_type)
         
         # Sonuçları döndür
         return jsonify({
@@ -92,10 +92,10 @@ def search_and_save_restaurants():
             sheet_name = sheet_name.replace("ı", "i").replace("ş", "s").replace("ğ", "g").replace("ü", "u").replace("ö", "o").replace("ç", "c")
             
             # Ara ve kaydet
-            result = scraper.run_search_to_sheets(district, food_type, sheet_name)
+            result = scraper.run_search_to_sheets(location, food_type, sheet_name)
             
-            # Kaydedilen restoranları da getir
-            restaurants = scraper.search_restaurants(district, food_type)
+            # Kaydedilen restoranlari da getir
+            restaurants = scraper.search_restaurants(location, food_type)
             
             return jsonify({
                 "success": result['success'],
@@ -106,7 +106,7 @@ def search_and_save_restaurants():
             })
         else:
             # Sadece ara
-            restaurants = scraper.search_restaurants(district, food_type)
+            restaurants = scraper.search_restaurants(location, food_type)
             
             return jsonify({
                 "success": True,

@@ -232,14 +232,14 @@ select {
   border-bottom: none;
 }
 
-.restaurant-link {
+.map-url {
   color: #61dafb;
   text-decoration: none;
-  transition: all 0.3s;
-  font-weight: 500;
+  font-size: 0.85rem;
+  word-break: break-all;
 }
 
-.restaurant-link:hover {
+.map-url:hover {
   color: #21a1f1;
   text-decoration: underline;
 }
