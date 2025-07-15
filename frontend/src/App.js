@@ -166,7 +166,7 @@ function App() {
               disabled={!selectedCity}
             >
               <option value="">İlçe seçin</option>
-              {selectedCity && cities[selectedCity].map(district => (
+              {selectedCity && cities[selectedCity] && cities[selectedCity].sort().map(district => (
                 <option key={district} value={district}>{district}</option>
               ))}
             </select>
@@ -247,27 +247,25 @@ function App() {
                   <th>Puan</th>
                   <th>Yorum Sayısı</th>
                   <th>Telefon</th>
-                  <th>Harita</th>
                 </tr>
               </thead>
               <tbody>
                 {results.map((restaurant, index) => (
                   <tr key={index}>
-                    <td>{restaurant.name}</td>
-                    <td>{restaurant.address}</td>
-                    <td>{restaurant.rating}</td>
-                    <td>{restaurant.reviewCount}</td>
-                    <td>{restaurant.phone}</td>
                     <td>
                       <a 
                         href={restaurant.url} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="map-link"
+                        className="restaurant-link"
                       >
-                        Gör
+                        {restaurant.name}
                       </a>
                     </td>
+                    <td>{restaurant.address}</td>
+                    <td>{restaurant.rating}</td>
+                    <td>{restaurant.reviewCount}</td>
+                    <td>{restaurant.phone}</td>
                   </tr>
                 ))}
               </tbody>

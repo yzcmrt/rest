@@ -22,7 +22,7 @@ body {
 }
 
 .container {
-  max-width: 700px;
+  max-width: 900px;
   width: 100%;
 }
 
@@ -74,7 +74,7 @@ select {
 }
 
 .results-container {
-  max-width: 700px;
+  max-width: 900px;
   width: 100%;
   text-align: left;
 }
@@ -232,18 +232,16 @@ select {
   border-bottom: none;
 }
 
-.results-table a {
+.restaurant-link {
   color: #61dafb;
   text-decoration: none;
-  padding: 0.3rem 0.8rem;
-  border: 1px solid #61dafb;
-  border-radius: 4px;
   transition: all 0.3s;
+  font-weight: 500;
 }
 
-.results-table a:hover {
-  background-color: #61dafb;
-  color: #282c34;
+.restaurant-link:hover {
+  color: #21a1f1;
+  text-decoration: underline;
 }
 
 /* Responsive tablo */
