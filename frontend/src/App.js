@@ -256,7 +256,6 @@ function App() {
               <thead>
                 <tr>
                   <th>Restoran Adı</th>
-                  <th>Adresi</th>
                   <th>Toplam Yorum Sayısı</th>
                   <th>Beğeni Puanı</th>
                   <th>Google Maps URL</th>
@@ -266,7 +265,6 @@ function App() {
                 {results.map((restaurant, index) => (
                   <tr key={index}>
                     <td>{restaurant.name}</td>
-                    <td>{restaurant.address}</td>
                     <td>{restaurant.reviewCount}</td>
                     <td>{restaurant.rating}</td>
                     <td>
