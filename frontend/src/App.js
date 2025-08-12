@@ -89,6 +89,8 @@ function App() {
   };
 
   const handleSearch = async (loadMore = false) => {
+    console.log('🔍 handleSearch çağrıldı!', { loadMore, selectedCity, selectedDistrict, foodType, restaurantName });
+    
     if (!selectedCity) {
       alert('Lütfen şehir seçin!');
       return;
@@ -282,7 +284,10 @@ function App() {
           </div>
 
           <button 
-            onClick={handleSearch} 
+            onClick={() => {
+              console.log('🔘 Ara butonu tıklandı!');
+              handleSearch();
+            }} 
             className="search-button"
             disabled={loading}
           >
