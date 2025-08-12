@@ -84,18 +84,55 @@ class GoogleSheetsRestaurantScraper:
                 logger.info(f"Restoran adı filtresi: {restaurant_name}")
             logger.info(f"Search query: {query}")
             
-            # Text search ile ara
-            places_result = self.gmaps.places(
-                query=query,
-                type='restaurant',
-                language='tr'
-            )
+            # Text search ile ara - pagination ile tüm sonuçları al
+            all_places = []
+            next_page_token = None
+            max_pages = 3  # Maksimum 3 sayfa (60 sonuç)
+            current_page = 0
+            
+            while current_page < max_pages:
+                if current_page == 0:
+                    # İlk sayfa
+                    places_result = self.gmaps.places(
+                        query=query,
+                        type='restaurant',
+                        language='tr'
+                    )
+                else:
+                    # Sonraki sayfalar için next_page_token gerekli
+                    if not next_page_token:
+                        break
+                    
+                    # Token kullanmadan önce kısa bir bekleme (Google API requirement)
+                    import time
+                    time.sleep(2)
+                    
+                    places_result = self.gmaps.places(
+                        query=query,
+                        type='restaurant',
+                        language='tr',
+                        page_token=next_page_token
+                    )
+                
+                current_results = places_result.get('results', [])
+                all_places.extend(current_results)
+                
+                next_page_token = places_result.get('next_page_token')
+                current_page += 1
+                
+                logger.info(f"Sayfa {current_page}: {len(current_results)} sonuç, toplam: {len(all_places)}")
+                
+                # Eğer next_page_token yoksa dur
+                if not next_page_token:
+                    break
+            
+            logger.info(f"Toplam Google API sonucu: {len(all_places)}")
             
             # Sonuçları filtrele - sadece belirtilen ilçedeki restoranları al
             filtered_results = []
             seen_places = set()  # Duplicate kontrolü için
             
-            for place in places_result.get('results', []):
+            for place in all_places:
                 # Adres kontrolü
                 address = place.get('formatted_address', '').lower()
                 place_name = place.get('name', '').lower()
