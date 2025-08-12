@@ -5,6 +5,8 @@ function App() {
   const [selectedCity, setSelectedCity] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [foodType, setFoodType] = useState('');
+  const [restaurantName, setRestaurantName] = useState('');
+  const [minRating, setMinRating] = useState(4.5);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [cities, setCities] = useState({});
@@ -13,11 +15,15 @@ function App() {
   const [searchHistory, setSearchHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [error, setError] = useState('');
-  const [sortBy, setSortBy] = useState('rating'); // rating, reviewCount
+  const [sortBy, setSortBy] = useState('rating'); // rating, reviewCount, ratingAsc
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading2, setLoading2] = useState(false); // Daha fazla yükleme için
 
   const API_BASE_URL = process.env.NODE_ENV === 'production' 
     ? '/api' 
-    : 'http://localhost:5000/api';
+    : 'http://localhost:5001/api';
 
   // API'den şehirleri al
   useEffect(() => {
@@ -76,34 +82,53 @@ function App() {
 
   const saveSearchToHistory = (search) => {
     const newHistory = [search, ...searchHistory.filter(h => 
-      !(h.city === search.city && h.district === search.district && h.foodType === search.foodType)
+      !(h.city === search.city && h.district === search.district && h.foodType === search.foodType && h.restaurantName === search.restaurantName && h.minRating === search.minRating)
     )].slice(0, 10); // Son 10 arama
     setSearchHistory(newHistory);
     localStorage.setItem('searchHistory', JSON.stringify(newHistory));
   };
 
-  const handleSearch = async () => {
-    if (!selectedCity || !selectedDistrict || !foodType) {
-      alert('Lütfen tüm alanları doldurun!');
+  const handleSearch = async (loadMore = false) => {
+    if (!selectedCity) {
+      alert('Lütfen şehir seçin!');
+      return;
+    }
+    
+    if (!selectedDistrict && !foodType && !restaurantName) {
+      alert('Lütfen ilçe, yemek türü veya restoran adından en az birini belirtin!');
       return;
     }
 
-    setLoading(true);
+    if (loadMore) {
+      setLoading2(true);
+    } else {
+      setLoading(true);
+      setCurrentPage(1);
+      setResults([]);
+    }
     setError('');
     
     try {
+      const page = loadMore ? currentPage + 1 : 1;
       const endpoint = saveToSheets ? 'search-and-save' : 'search';
-      const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+      const url = `${API_BASE_URL}/${endpoint}`;
+      const requestBody = {
+        city: selectedCity,
+        district: selectedDistrict,
+        foodType: foodType,
+        restaurantName: restaurantName || null,
+        minRating: minRating,
+        saveToSheets: saveToSheets,
+        page: page,
+        perPage: 20
+      };
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          city: selectedCity,
-          district: selectedDistrict,
-          foodType: foodType,
-          saveToSheets: saveToSheets
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const data = await response.json();
@@ -119,16 +144,26 @@ function App() {
           url: restaurant['Google Maps URL'] || restaurant.url
         }));
         
-        setResults(formattedResults);
+        if (loadMore) {
+          setResults(prevResults => [...prevResults, ...formattedResults]);
+          setCurrentPage(page);
+        } else {
+          setResults(formattedResults);
+          setCurrentPage(1);
+          // Arama geçmişine ekle (sadece yeni arama için)
+          saveSearchToHistory({
+            city: selectedCity,
+            district: selectedDistrict,
+            foodType: foodType,
+            restaurantName: restaurantName,
+            minRating: minRating,
+            timestamp: new Date().toISOString(),
+            resultCount: data.totalCount || formattedResults.length
+          });
+        }
         
-        // Arama geçmişine ekle
-        saveSearchToHistory({
-          city: selectedCity,
-          district: selectedDistrict,
-          foodType: foodType,
-          timestamp: new Date().toISOString(),
-          resultCount: formattedResults.length
-        });
+        setHasMore(data.hasMore || false);
+        setTotalCount(data.totalCount || formattedResults.length);
         
         if (saveToSheets && data.sheetName) {
           alert(`Sonuçlar ${data.sheetName} sayfasına kaydedildi!`);
@@ -142,7 +177,11 @@ function App() {
       setError('Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.');
       setResults([]);
     } finally {
-      setLoading(false);
+      if (loadMore) {
+        setLoading2(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -201,6 +240,36 @@ function App() {
             </select>
           </div>
 
+          <div className="form-group">
+            <label>Restoran Adı (Opsiyonel)</label>
+            <input 
+              type="text"
+              value={restaurantName} 
+              onChange={(e) => setRestaurantName(e.target.value)}
+              className="text-input"
+              placeholder="Örn: pideci, konya, sultanahmet..."
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Minimum Puan</label>
+            <select 
+              value={minRating} 
+              onChange={(e) => setMinRating(parseFloat(e.target.value))}
+              className="select-input"
+            >
+              <option value="1.0">1.0+ puan</option>
+              <option value="1.5">1.5+ puan</option>
+              <option value="2.0">2.0+ puan</option>
+              <option value="2.5">2.5+ puan</option>
+              <option value="3.0">3.0+ puan</option>
+              <option value="3.5">3.5+ puan</option>
+              <option value="4.0">4.0+ puan</option>
+              <option value="4.5">4.5+ puan</option>
+              <option value="5.0">5.0 puan</option>
+            </select>
+          </div>
+
           <div className="form-group checkbox-group">
             <label>
               <input 
@@ -230,7 +299,7 @@ function App() {
         {results.length > 0 && (
           <div className="results-container">
             <div className="results-header">
-              <h2>Sonuçlar ({results.length})</h2>
+              <h2>Sonuçlar ({results.length}/{totalCount})</h2>
               <div className="sort-buttons">
                 <button 
                   className={sortBy === 'rating' ? 'active' : ''}
@@ -239,7 +308,16 @@ function App() {
                     setResults([...results].sort((a, b) => b.rating - a.rating));
                   }}
                 >
-                  Puana Göre
+                  Puan (Yüksek→Düşük)
+                </button>
+                <button 
+                  className={sortBy === 'ratingAsc' ? 'active' : ''}
+                  onClick={() => {
+                    setSortBy('ratingAsc');
+                    setResults([...results].sort((a, b) => a.rating - b.rating));
+                  }}
+                >
+                  Puan (Düşük→Yüksek)
                 </button>
                 <button 
                   className={sortBy === 'reviewCount' ? 'active' : ''}
@@ -281,6 +359,18 @@ function App() {
                 ))}
               </tbody>
             </table>
+            
+            {hasMore && (
+              <div className="load-more-container">
+                <button 
+                  className="load-more-button"
+                  onClick={() => handleSearch(true)}
+                  disabled={loading2}
+                >
+                  {loading2 ? 'Yükleniyor...' : 'Daha Fazla Göster'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -300,9 +390,15 @@ function App() {
                       setSelectedCity(item.city);
                       setSelectedDistrict(item.district);
                       setFoodType(item.foodType);
+                      setRestaurantName(item.restaurantName || '');
+                      setMinRating(item.minRating || 4.5);
                     }}
                   >
-                    <span>{item.city} - {item.district} - {item.foodType}</span>
+                    <span>
+                      {item.city} - {item.district} - {item.foodType}
+                      {item.restaurantName && ` - "${item.restaurantName}"`}
+                      {item.minRating && ` - ${item.minRating}+`}
+                    </span>
                     <span className="result-count">{item.resultCount} sonuç</span>
                   </div>
                 ))}

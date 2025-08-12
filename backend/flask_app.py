@@ -3,22 +3,40 @@ from flask_cors import CORS
 import json
 import os
 from google_sheets_scraper import GoogleSheetsRestaurantScraper
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
 
-# Script'in bulunduğu dizini al
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Load environment variables
+load_dotenv()
 
-# Config dosyasını yükle
-config_path = os.path.join(SCRIPT_DIR, 'config.json')
-with open(config_path, 'r') as f:
-    config = json.load(f)
+# Get config from environment variables
+config = {
+    'maps_api_key': os.getenv('MAPS_API_KEY'),
+    'sheets_credentials': os.getenv('SHEETS_CREDENTIALS'),
+    'spreadsheet_id': os.getenv('SPREADSHEET_ID')
+}
+
+# Initialize scraper
+creds_path = None
+if config['sheets_credentials'] and config['sheets_credentials'].strip():
+    try:
+        # Parse credentials from environment
+        sheets_creds = json.loads(config['sheets_credentials'])
+        # Save credentials to temp file
+        creds_path = '/tmp/credentials.json'
+        with open(creds_path, 'w') as f:
+            json.dump(sheets_creds, f)
+        print("Sheets credentials parsed successfully")
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse SHEETS_CREDENTIALS: {e}")
+        creds_path = None
 
 # Scraper'ı başlat
 scraper = GoogleSheetsRestaurantScraper(
     maps_api_key=config['maps_api_key'],
-    sheets_credentials_path=os.path.join(SCRIPT_DIR, config['sheets_credentials_path']),
+    sheets_credentials_path=creds_path,
     spreadsheet_id=config['spreadsheet_id']
 )
 
@@ -37,24 +55,50 @@ def search_restaurants():
         city = data.get('city')
         district = data.get('district')
         food_type = data.get('foodType')
+        min_rating = data.get('minRating', 4.5)
+        restaurant_name = data.get('restaurantName', None)
+        page = data.get('page', 1)
+        per_page = data.get('perPage', 20)
         
-        if not all([city, district, food_type]):
+        # En az şehir ve (ilçe veya yemek türü veya restoran adı) gerekli
+        if not city:
             return jsonify({
                 "success": False,
-                "error": "Şehir, ilçe ve yemek türü zorunludur"
+                "error": "Şehir seçimi zorunludur"
+            }), 400
+        
+        if not any([district, food_type, restaurant_name]):
+            return jsonify({
+                "success": False,
+                "error": "İlçe, yemek türü veya restoran adından en az birini belirtmelisiniz"
             }), 400
         
         # Lokasyon oluştur
-        location = f"{district}, {city}"
+        if district:
+            location = f"{district}, {city}"
+        else:
+            location = city
+        
+        # Yemek türü yoksa genel arama yap
+        search_food_type = food_type if food_type else "restaurant"
         
         # Google Maps'te ara (Google Sheets'e kaydetmeden)
-        restaurants = scraper.search_restaurants(location, food_type)
+        all_restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name)
+        
+        # Pagination uygula
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        restaurants = all_restaurants[start_idx:end_idx]
         
         # Sonuçları döndür
         return jsonify({
             "success": True,
             "data": restaurants,
             "count": len(restaurants),
+            "totalCount": len(all_restaurants),
+            "page": page,
+            "perPage": per_page,
+            "hasMore": end_idx < len(all_restaurants),
             "location": location,
             "foodType": food_type
         })
@@ -75,43 +119,87 @@ def search_and_save_restaurants():
         city = data.get('city')
         district = data.get('district')
         food_type = data.get('foodType')
+        min_rating = data.get('minRating', 4.5)
+        restaurant_name = data.get('restaurantName', None)
         save_to_sheets = data.get('saveToSheets', False)
+        page = data.get('page', 1)
+        per_page = data.get('perPage', 20)
         
-        if not all([city, district, food_type]):
+        # En az şehir ve (ilçe veya yemek türü veya restoran adı) gerekli
+        if not city:
             return jsonify({
                 "success": False,
-                "error": "Şehir, ilçe ve yemek türü zorunludur"
+                "error": "Şehir seçimi zorunludur"
+            }), 400
+        
+        if not any([district, food_type, restaurant_name]):
+            return jsonify({
+                "success": False,
+                "error": "İlçe, yemek türü veya restoran adından en az birini belirtmelisiniz"
             }), 400
         
         # Lokasyon oluştur
-        location = f"{district}, {city}"
+        if district:
+            location = f"{district}, {city}"
+        else:
+            location = city
+        
+        # Yemek türü yoksa genel arama yap
+        search_food_type = food_type if food_type else "restaurant"
         
         if save_to_sheets:
             # Sheet adını oluştur
-            sheet_name = f"{district}_{food_type}_4.5+"
+            sheet_parts = []
+            if district:
+                sheet_parts.append(district)
+            if restaurant_name:
+                sheet_parts.append(restaurant_name)
+            if food_type:
+                sheet_parts.append(food_type)
+            sheet_parts.append(f"{min_rating}+")
+            
+            sheet_name = "_".join(sheet_parts)
             sheet_name = sheet_name.replace("ı", "i").replace("ş", "s").replace("ğ", "g").replace("ü", "u").replace("ö", "o").replace("ç", "c")
             
             # Ara ve kaydet
-            result = scraper.run_search_to_sheets(location, food_type, sheet_name)
+            result = scraper.run_search_to_sheets(location, search_food_type, sheet_name, min_rating=min_rating, restaurant_name=restaurant_name)
             
             # Kaydedilen restoranlari da getir
-            restaurants = scraper.search_restaurants(location, food_type)
+            all_restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name)
+            
+            # Pagination uygula
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            restaurants = all_restaurants[start_idx:end_idx]
             
             return jsonify({
                 "success": result['success'],
                 "data": restaurants,
-                "count": result['count'],
+                "count": len(restaurants),
+                "totalCount": len(all_restaurants),
+                "page": page,
+                "perPage": per_page,
+                "hasMore": end_idx < len(all_restaurants),
                 "message": result['message'],
                 "sheetName": sheet_name
             })
         else:
             # Sadece ara
-            restaurants = scraper.search_restaurants(location, food_type)
+            all_restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name)
+            
+            # Pagination uygula
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            restaurants = all_restaurants[start_idx:end_idx]
             
             return jsonify({
                 "success": True,
                 "data": restaurants,
                 "count": len(restaurants),
+                "totalCount": len(all_restaurants),
+                "page": page,
+                "perPage": per_page,
+                "hasMore": end_idx < len(all_restaurants),
                 "location": location,
                 "foodType": food_type
             })
@@ -192,4 +280,4 @@ def get_food_types():
     return jsonify(food_types)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)

@@ -85,27 +85,55 @@ class handler(BaseHTTPRequestHandler):
             city = data.get('city')
             district = data.get('district')
             food_type = data.get('foodType')
+            min_rating = data.get('minRating', 4.5)
+            restaurant_name = data.get('restaurantName', None)
             
-            if not all([city, district, food_type]):
+            # En az şehir ve (ilçe veya yemek türü veya restoran adı) gerekli
+            if not city:
                 self.end_headers()
                 response = {
                     "success": False,
-                    "error": "Şehir, ilçe ve yemek türü zorunludur"
+                    "error": "Şehir seçimi zorunludur"
                 }
                 self.wfile.write(json.dumps(response).encode())
                 return
             
-            location = f"{district}, {city}"
+            if not any([district, food_type, restaurant_name]):
+                self.end_headers()
+                response = {
+                    "success": False,
+                    "error": "İlçe, yemek türü veya restoran adından en az birini belirtmelisiniz"
+                }
+                self.wfile.write(json.dumps(response).encode())
+                return
+            
+            # Lokasyon oluştur
+            if district:
+                location = f"{district}, {city}"
+            else:
+                location = city
+            
+            # Yemek türü yoksa genel arama yap
+            search_food_type = food_type if food_type else "restaurant"
             
             # Generate sheet name
-            sheet_name = f"{district}_{food_type}".replace(' ', '_')
+            sheet_parts = []
+            if district:
+                sheet_parts.append(district)
+            if restaurant_name:
+                sheet_parts.append(restaurant_name)
+            if food_type:
+                sheet_parts.append(food_type)
+            sheet_parts.append(f"{min_rating}+")
+            
+            sheet_name = "_".join(sheet_parts).replace(' ', '_')
             
             # Search and save to sheets
-            result = scraper.run_search_to_sheets(location, food_type, sheet_name)
+            result = scraper.run_search_to_sheets(location, search_food_type, sheet_name, min_rating=min_rating, restaurant_name=restaurant_name)
             
             if result['success'] and result['count'] > 0:
                 # Get the restaurant data for response
-                restaurants = scraper.search_restaurants(location, food_type)
+                restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name)
                 
                 self.end_headers()
                 response = {

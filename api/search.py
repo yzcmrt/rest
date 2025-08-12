@@ -85,24 +85,55 @@ class handler(BaseHTTPRequestHandler):
             city = data.get('city')
             district = data.get('district')
             food_type = data.get('foodType')
+            min_rating = data.get('minRating', 4.5)
+            restaurant_name = data.get('restaurantName', None)
+            page = data.get('page', 1)
+            per_page = data.get('perPage', 20)
             
-            if not all([city, district, food_type]):
+            # En az şehir ve (ilçe veya yemek türü veya restoran adı) gerekli
+            if not city:
                 self.end_headers()
                 response = {
                     "success": False,
-                    "error": "Şehir, ilçe ve yemek türü zorunludur"
+                    "error": "Şehir seçimi zorunludur"
                 }
                 self.wfile.write(json.dumps(response).encode())
                 return
             
-            location = f"{district}, {city}"
-            restaurants = scraper.search_restaurants(location, food_type)
+            if not any([district, food_type, restaurant_name]):
+                self.end_headers()
+                response = {
+                    "success": False,
+                    "error": "İlçe, yemek türü veya restoran adından en az birini belirtmelisiniz"
+                }
+                self.wfile.write(json.dumps(response).encode())
+                return
+            
+            # Lokasyon oluştur
+            if district:
+                location = f"{district}, {city}"
+            else:
+                location = city
+            
+            # Yemek türü yoksa genel arama yap
+            search_food_type = food_type if food_type else "restaurant"
+            
+            all_restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name)
+            
+            # Pagination uygula
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            restaurants = all_restaurants[start_idx:end_idx]
             
             self.end_headers()
             response = {
                 "success": True,
                 "data": restaurants,
                 "count": len(restaurants),
+                "totalCount": len(all_restaurants),
+                "page": page,
+                "perPage": per_page,
+                "hasMore": end_idx < len(all_restaurants),
                 "location": location,
                 "foodType": food_type
             }

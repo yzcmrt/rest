@@ -1,5 +1,4 @@
 import googlemaps
-import pandas as pd
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -19,29 +18,37 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class GoogleSheetsRestaurantScraper:
-    def __init__(self, maps_api_key, sheets_credentials_path, spreadsheet_id):
+    def __init__(self, maps_api_key, sheets_credentials_path=None, spreadsheet_id=None):
         """
         Google Maps ve Sheets API'lerini başlatır
         
         Args:
             maps_api_key: Google Maps API anahtarı
-            sheets_credentials_path: Service account JSON dosya yolu
-            spreadsheet_id: Google Sheets ID'si
+            sheets_credentials_path: Service account JSON dosya yolu (optional)
+            spreadsheet_id: Google Sheets ID'si (optional)
         """
         # Google Maps client
         self.gmaps = googlemaps.Client(key=maps_api_key)
         
-        # Google Sheets setup
+        # Google Sheets setup (optional)
         self.spreadsheet_id = spreadsheet_id
-        self.credentials = service_account.Credentials.from_service_account_file(
-            sheets_credentials_path,
-            scopes=['https://www.googleapis.com/auth/spreadsheets']
-        )
-        self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
+        self.sheets_service = None
+        
+        if sheets_credentials_path and spreadsheet_id:
+            try:
+                self.credentials = service_account.Credentials.from_service_account_file(
+                    sheets_credentials_path,
+                    scopes=['https://www.googleapis.com/auth/spreadsheets']
+                )
+                self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
+                logger.info("Google Sheets service initialized")
+            except Exception as e:
+                logger.warning(f"Google Sheets setup failed: {e}")
+                self.sheets_service = None
         
         logger.info("GoogleSheetsRestaurantScraper başlatıldı")
     
-    def search_restaurants(self, location, restaurant_type, radius=5000, min_rating=4.5):
+    def search_restaurants(self, location, restaurant_type, radius=2000, min_rating=4.5, restaurant_name=None):
         """
         Google Maps'te restoran arar
         
@@ -50,6 +57,7 @@ class GoogleSheetsRestaurantScraper:
             restaurant_type: Restoran türü (örn: "köfteci", "kebapçı")
             radius: Arama yarıçapı (metre)
             min_rating: Minimum puan filtresi (varsayılan: 4.5)
+            restaurant_name: Opsiyonel restoran adı filtresi
             
         Returns:
             list: Restoran listesi
@@ -57,39 +65,124 @@ class GoogleSheetsRestaurantScraper:
         restaurants = []
         
         try:
-            # Konum koordinatlarını al
-            geocode_result = self.gmaps.geocode(f"{location}, istanbul")
-            if not geocode_result:
-                logger.error(f"Konum bulunamadı: {location}")
-                return restaurants
+            # İlçe ve şehir bilgilerini ayır
+            location_parts = location.split(',')
+            district = location_parts[0].strip() if location_parts else location
             
-            lat_lng = geocode_result[0]['geometry']['location']
-            logger.info(f"Geocoding successful for {location}: {lat_lng}")
+            # Text search kullan - daha spesifik sonuçlar için
+            if restaurant_name and restaurant_type != "restaurant":
+                # Hem restoran adı hem yemek türü belirtilmişse
+                query = f"{restaurant_name} {restaurant_type} in {location}"
+            elif restaurant_name:
+                # Sadece restoran adı belirtilmişse
+                query = f"{restaurant_name} in {location}"
+            else:
+                # Sadece yemek türü belirtilmişse
+                query = f"{restaurant_type} in {location}"
             
-            # Restoran ara
-            query = f"{restaurant_type} {location}"
             logger.info(f"{location}'da {restaurant_type} aranıyor...")
-            logger.info(f"Search query: {query}, location: {lat_lng}, radius: {radius}")
+            if restaurant_name:
+                logger.info(f"Restoran adı filtresi: {restaurant_name}")
+            logger.info(f"Search query: {query}")
             
-            places_result = self.gmaps.places_nearby(
-                location=lat_lng,
-                radius=radius,
-                keyword=query,
-                type='restaurant'
+            # Text search ile ara
+            places_result = self.gmaps.places(
+                query=query,
+                type='restaurant',
+                language='tr'
             )
             
-            # İlk sayfa sonuçları
-            restaurants.extend(self._extract_restaurant_info(places_result.get('results', [])))
+            # Sonuçları filtrele - sadece belirtilen ilçedeki restoranları al
+            filtered_results = []
+            seen_places = set()  # Duplicate kontrolü için
             
-            # Diğer sayfalar
-            while 'next_page_token' in places_result:
-                time.sleep(2)  # API rate limit için bekleme
-                places_result = self.gmaps.places_nearby(
-                    page_token=places_result['next_page_token']
-                )
-                restaurants.extend(self._extract_restaurant_info(places_result.get('results', [])))
+            for place in places_result.get('results', []):
+                # Adres kontrolü
+                address = place.get('formatted_address', '').lower()
+                place_name = place.get('name', '').lower()
+                place_id = place.get('place_id')
+                
+                # Duplicate kontrolü - place_id ile
+                if place_id in seen_places:
+                    continue
+                
+                # İlçe kontrolü (sadece district belirtilmişse)
+                if len(location_parts) > 1 and district.lower() not in address:
+                    continue
+                
+                # Restoran adı filtresi (eğer belirtilmişse)
+                if restaurant_name and restaurant_name.lower() not in place_name:
+                    continue
+                
+                seen_places.add(place_id)
+                filtered_results.append(place)
             
-            logger.info(f"Toplam {len(restaurants)} restoran bulundu")
+            # Filtrelenmiş sonuçları işle
+            restaurants.extend(self._extract_restaurant_info(filtered_results, min_rating))
+            
+            # Eğer yeterli sonuç yoksa, nearby search ile destekle
+            if len(restaurants) < 30:
+                # Geocode yap
+                geocode_result = self.gmaps.geocode(f"{location}, Türkiye")
+                if geocode_result:
+                    lat_lng = geocode_result[0]['geometry']['location']
+                    
+                    # Nearby search - daha küçük yarıçap ile
+                    nearby_result = self.gmaps.places_nearby(
+                        location=lat_lng,
+                        radius=radius,
+                        keyword=restaurant_type,
+                        type='restaurant'
+                    )
+                    
+                    # Nearby sonuçları da filtrele
+                    for place in nearby_result.get('results', []):
+                        address = place.get('vicinity', '').lower()
+                        place_name = place.get('name', '').lower()
+                        place_id = place.get('place_id')
+                        
+                        # Duplicate kontrolü
+                        if place_id in seen_places:
+                            continue
+                        
+                        # İlçe kontrolü (sadece district belirtilmişse)
+                        if len(location_parts) > 1:
+                            address_normalized = self._normalize_turkish_text(address)
+                            district_normalized = self._normalize_turkish_text(district)
+                            
+                            # Birden fazla kontrol yöntemi
+                            district_found = False
+                            
+                            # 1. Tam isim kontrolü
+                            if district_normalized in address_normalized:
+                                district_found = True
+                            
+                            # 2. Yaygın kısaltmalar kontrolü
+                            district_variations = self._get_district_variations(district_normalized)
+                            for variation in district_variations:
+                                if variation in address_normalized:
+                                    district_found = True
+                                    break
+                            
+                            # 3. Komşu ilçeler için tolerans (isteğe bağlı)
+                            if not district_found:
+                                continue
+                        
+                        # Restoran adı filtresi (eğer belirtilmişse)
+                        if restaurant_name and restaurant_name.lower() not in place_name:
+                            continue
+                        
+                        seen_places.add(place_id)
+                        filtered_results.append(place)
+                    
+                    # Yeni sonuçları işle
+                    new_restaurants = self._extract_restaurant_info([p for p in filtered_results if p.get('place_id') not in [r.get('place_id') for r in restaurants]], min_rating)
+                    restaurants.extend(new_restaurants)
+            
+            # Puana göre sırala (yüksekten düşüğe)
+            restaurants.sort(key=lambda x: x['Puan'], reverse=True)
+            
+            logger.info(f"Toplam {len(restaurants)} restoran bulundu ({district} içinde)")
             return restaurants
             
         except Exception as e:
@@ -130,6 +223,7 @@ class GoogleSheetsRestaurantScraper:
                     'Yorum Sayısı': place.get('user_ratings_total', 0),
                     'Telefon': details.get('formatted_phone_number', 'Bilinmiyor'),
                     'Google Maps URL': f"https://www.google.com/maps/place/?q=place_id:{place.get('place_id')}",
+                    'place_id': place.get('place_id')
                 }
                 restaurants.append(restaurant)
                 
@@ -143,12 +237,18 @@ class GoogleSheetsRestaurantScraper:
                     'Yorum Sayısı': place.get('user_ratings_total', 0),
                     'Telefon': 'Bilinmiyor',
                     'Google Maps URL': f"https://www.google.com/maps/place/?q=place_id:{place.get('place_id')}",
+                    'place_id': place.get('place_id'),
                     'Tarih': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
                 restaurants.append(restaurant)
         
         return restaurants
     
+    def _format_opening_hours(self, opening_hours):
+        """Çalışma saatlerini formatlar"""
+        if not opening_hours or 'weekday_text' not in opening_hours:
+            return 'Bilinmiyor'
+        return ', '.join(opening_hours['weekday_text'])
     
     def create_or_update_sheet(self, sheet_name, data):
         """
@@ -156,17 +256,20 @@ class GoogleSheetsRestaurantScraper:
         
         Args:
             sheet_name: Sheet adı
-            data: DataFrame veya dict listesi
+            data: dict listesi
             
         Returns:
             bool: Başarılı/başarısız
         """
         try:
-            # DataFrame'e çevir
-            if isinstance(data, list):
-                df = pd.DataFrame(data)
-            else:
-                df = data
+            # Check if sheets service is available
+            if not self.sheets_service:
+                logger.warning("Google Sheets service not available")
+                return False
+                
+            # Veri kontrolü
+            if not data or not isinstance(data, list):
+                return False
             
             # Sheet var mı kontrol et
             sheets_metadata = self.sheets_service.spreadsheets().get(
@@ -193,8 +296,14 @@ class GoogleSheetsRestaurantScraper:
                 ).execute()
                 logger.info(f"Yeni sheet oluşturuldu: {sheet_name}")
             
-            # Veriyi hazırla
-            values = [df.columns.tolist()] + df.values.tolist()
+            # Veriyi hazırla - başlık satırı ve veriler
+            if data:
+                headers = list(data[0].keys())
+                values = [headers]
+                for row in data:
+                    values.append([row.get(header, '') for header in headers])
+            else:
+                values = []
             
             # Sheet'i temizle ve veriyi yaz
             range_name = f"{sheet_name}!A1"
@@ -217,7 +326,7 @@ class GoogleSheetsRestaurantScraper:
             logger.info(f"{result.get('updatedCells')} hücre güncellendi")
             
             # Formatla
-            self._format_sheet(sheet_name, len(df.columns), len(values))
+            self._format_sheet(sheet_name, len(headers) if data else 0, len(values))
             
             return True
             
@@ -289,7 +398,7 @@ class GoogleSheetsRestaurantScraper:
         except Exception as e:
             logger.warning(f"Formatlama hatası (önemsiz): {str(e)}")
     
-    def run_search_to_sheets(self, location, restaurant_type, sheet_name):
+    def run_search_to_sheets(self, location, restaurant_type, sheet_name, min_rating=4.5, restaurant_name=None):
         """
         Restoran arar ve sonuçları Google Sheets'e yazar
         
@@ -297,13 +406,15 @@ class GoogleSheetsRestaurantScraper:
             location: Arama konumu
             restaurant_type: Restoran türü
             sheet_name: Yazılacak sheet adı
+            min_rating: Minimum puan filtresi
+            restaurant_name: Opsiyonel restoran adı filtresi
             
         Returns:
             dict: İşlem sonucu
         """
         try:
             # Restoran ara
-            restaurants = self.search_restaurants(location, restaurant_type)
+            restaurants = self.search_restaurants(location, restaurant_type, min_rating=min_rating, restaurant_name=restaurant_name)
             
             if not restaurants:
                 return {
@@ -368,3 +479,67 @@ class GoogleSheetsRestaurantScraper:
             time.sleep(2)
         
         return results
+    
+    def _normalize_turkish_text(self, text):
+        """Türkçe karakterleri normalize eder ve küçük harfe çevirir"""
+        if not text:
+            return ""
+        
+        # Türkçe karakter dönüşümü
+        replacements = {
+            'ı': 'i', 'İ': 'i', 'ş': 's', 'Ş': 's', 'ğ': 'g', 'Ğ': 'g',
+            'ü': 'u', 'Ü': 'u', 'ö': 'o', 'Ö': 'o', 'ç': 'c', 'Ç': 'c'
+        }
+        
+        normalized = text.lower()
+        for tr_char, en_char in replacements.items():
+            normalized = normalized.replace(tr_char, en_char)
+        
+        return normalized
+    
+    def _get_district_variations(self, district):
+        """İlçe isimlerinin yaygın varyasyonlarını döner"""
+        variations = [district]
+        
+        # İstanbul ilçe varyasyonları
+        district_variations = {
+            'kadikoy': ['kadikoy', 'kadiköy', 'kadıkoy', 'kadıköy'],
+            'besiktas': ['besiktas', 'beşiktaş', 'besıktas', 'besıktaş'],
+            'sisli': ['sisli', 'şişli'],
+            'beyoglu': ['beyoglu', 'beyoğlu'],
+            'uskudar': ['uskudar', 'üsküdar'],
+            'fatih': ['fatih', 'fatıh'],
+            'bakirkoy': ['bakirkoy', 'bakırköy'],
+            'maltepe': ['maltepe'],
+            'pendik': ['pendik'],
+            'tuzla': ['tuzla'],
+            'kartal': ['kartal'],
+            'atasehir': ['atasehir', 'ataşehir'],
+            'umraniye': ['umraniye', 'ümraniye'],
+            'cekmekoy': ['cekmekoy', 'çekmeköy'],
+            'sancaktepe': ['sancaktepe'],
+            'sultanbeyli': ['sultanbeyli'],
+            'kucukcekmece': ['kucukcekmece', 'küçükçekmece'],
+            'buyukcekmece': ['buyukcekmece', 'büyükçekmece'],
+            'avcilar': ['avcilar', 'avcılar'],
+            'bagcilar': ['bagcilar', 'bağcılar'],
+            'bahcelievler': ['bahcelievler', 'bahçelievler'],
+            'esenler': ['esenler'],
+            'gaziosmanpasa': ['gaziosmanpasa', 'gaziosmanpaşa'],
+            'gungoren': ['gungoren', 'güngören'],
+            'sultangazi': ['sultangazi'],
+            'eyup': ['eyup', 'eyüp', 'eyupsultan', 'eyüpsultan'],
+            'arnavutkoy': ['arnavutkoy', 'arnavutköy'],
+            'basaksehir': ['basaksehir', 'başakşehir'],
+            'beylikduzu': ['beylikduzu', 'beylikdüzü'],
+            'catalca': ['catalca', 'çatalca'],
+            'silivri': ['silivri']
+        }
+        
+        # İlgili varyasyonları bul
+        for key, vars_list in district_variations.items():
+            if district in vars_list:
+                variations.extend(vars_list)
+                break
+        
+        return list(set(variations))  # Tekrarları kaldır
