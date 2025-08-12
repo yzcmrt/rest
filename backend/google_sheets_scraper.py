@@ -182,12 +182,12 @@ class GoogleSheetsRestaurantScraper:
                         if place_id in seen_places:
                             continue
                         
-                        # İlçe kontrolü (sadece district belirtilmişse)
+                        # İlçe kontrolü (sadece district belirtilmişse) - ESNEK YAKLAŞIM
                         if len(location_parts) > 1:
                             address_normalized = self._normalize_turkish_text(address)
                             district_normalized = self._normalize_turkish_text(district)
                             
-                            # Birden fazla kontrol yöntemi
+                            # Birden fazla kontrol yöntemi - DAHA ESNEK
                             district_found = False
                             
                             # 1. Tam isim kontrolü
@@ -201,9 +201,35 @@ class GoogleSheetsRestaurantScraper:
                                     district_found = True
                                     break
                             
-                            # 3. Komşu ilçeler için tolerans (isteğe bağlı)
+                            # 3. İstanbul geneli kontrolü - YENI EKLEME
+                            if not district_found and 'istanbul' in address_normalized:
+                                # Google bazen sadece "İstanbul" yazıyor, ilçe belirtmiyor
+                                # Bu durumda koordinat kontrolü yapalım
+                                lat = place.get('geometry', {}).get('location', {}).get('lat')
+                                lng = place.get('geometry', {}).get('location', {}).get('lng')
+                                
+                                if lat and lng:
+                                    # İstanbul sınırları içindeyse kabul et
+                                    if self._is_location_in_bounds(lat, lng, 'İstanbul', district):
+                                        district_found = True
+                                        logger.debug(f"Koordinat bazlı eşleşme: {district} - {lat},{lng}")
+                            
+                            # 4. ESNEK YAKLAŞIM: Çok katı olmayalım
                             if not district_found:
-                                continue
+                                # Eğer address'te hiçbir ilçe bilgisi yoksa ve İstanbul içindeyse
+                                # nearby search results olabilir, kabul edelim
+                                if 'istanbul' in address_normalized and not any(
+                                    other_district in address_normalized for other_district in 
+                                    ['kadikoy', 'besiktas', 'sisli', 'fatih', 'beyoglu', 'uskudar', 
+                                     'bagcilar', 'zeytinburnu', 'bakirkoy', 'maltepe']
+                                ):
+                                    district_found = True
+                                    logger.debug(f"Esnek eşleşme (İstanbul genel): {address}")
+                                else:
+                                    logger.debug(f"İlçe eşleşmedi: {district} != {address}")
+                                    continue
+                            else:
+                                logger.debug(f"İlçe eşleşti: {district} = {address}")
                         
                         # Restoran adı filtresi (eğer belirtilmişse)
                         if restaurant_name and restaurant_name.lower() not in place_name:
