@@ -15,23 +15,43 @@ load_dotenv()
 config = {
     'maps_api_key': os.getenv('MAPS_API_KEY'),
     'sheets_credentials': os.getenv('SHEETS_CREDENTIALS'),
+    'sheets_credentials_path': os.getenv('SHEETS_CREDENTIALS_PATH'),
     'spreadsheet_id': os.getenv('SPREADSHEET_ID')
 }
 
 # Initialize scraper
 creds_path = None
-if config['sheets_credentials'] and config['sheets_credentials'].strip():
-    try:
-        # Parse credentials from environment
-        sheets_creds = json.loads(config['sheets_credentials'])
-        # Save credentials to temp file
-        creds_path = '/tmp/credentials.json'
-        with open(creds_path, 'w') as f:
-            json.dump(sheets_creds, f)
-        print("Sheets credentials parsed successfully")
-    except json.JSONDecodeError as e:
-        print(f"Failed to parse SHEETS_CREDENTIALS: {e}")
-        creds_path = None
+try:
+    # 1) Prefer explicit path if provided
+    if config.get('sheets_credentials_path'):
+        potential_path = config['sheets_credentials_path']
+        if os.path.isabs(potential_path):
+            path_candidate = potential_path
+        else:
+            # Resolve relative to backend directory
+            backend_dir = os.path.dirname(os.path.abspath(__file__))
+            path_candidate = os.path.join(backend_dir, potential_path)
+        if os.path.exists(path_candidate):
+            creds_path = path_candidate
+            print(f"Using SHEETS_CREDENTIALS_PATH: {creds_path}")
+
+    # 2) Else try to parse inline JSON from env var
+    if not creds_path and config.get('sheets_credentials') and config['sheets_credentials'].strip():
+        try:
+            # Normalize multi-line envs: remove surrounding quotes and strip
+            cleaned = config['sheets_credentials'].strip()
+            # Attempt JSON parse
+            sheets_creds = json.loads(cleaned)
+            # Save credentials to temp file
+            creds_path = '/tmp/credentials.json'
+            with open(creds_path, 'w') as f:
+                json.dump(sheets_creds, f)
+            print("Sheets credentials parsed successfully")
+        except json.JSONDecodeError as e:
+            print(f"Failed to parse SHEETS_CREDENTIALS: {e}")
+            creds_path = None
+except Exception as e:
+    print(f"Credentials setup error: {e}")
 
 # Scraper'ı başlat
 scraper = GoogleSheetsRestaurantScraper(
@@ -83,7 +103,8 @@ def search_restaurants():
         search_food_type = food_type if food_type else "restaurant"
         
         # Google Maps'te ara (Google Sheets'e kaydetmeden)
-        all_restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name)
+        full_scan = bool(data.get('fullScan', False))
+        all_restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name, full_scan=full_scan)
         
         # Pagination uygula
         start_idx = (page - 1) * per_page
@@ -185,7 +206,8 @@ def search_and_save_restaurants():
             })
         else:
             # Sadece ara
-            all_restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name)
+            full_scan = bool(data.get('fullScan', False))
+            all_restaurants = scraper.search_restaurants(location, search_food_type, min_rating=min_rating, restaurant_name=restaurant_name, full_scan=full_scan)
             
             # Pagination uygula
             start_idx = (page - 1) * per_page

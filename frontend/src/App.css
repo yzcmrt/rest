@@ -6,7 +6,7 @@
 
 body {
   font-family: sans-serif;
-  background-color: #282c34;
+  background-color: #0b1220;
   color: white;
   margin: 0;
   min-height: 100vh;
@@ -24,6 +24,11 @@ body {
 .container {
   max-width: 900px;
   width: 100%;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px;
+  padding: 24px;
+  backdrop-filter: blur(6px);
 }
 
 .title {
@@ -60,27 +65,19 @@ select, .text-input {
 }
 
 .text-input {
-  background-color: white;
-  color: black;
+  background-color: #0f172a;
+  color: #e5e7eb;
+  border: 1px solid #1f2937;
 }
+.text-input:focus { outline: 1px solid #22d3ee; box-shadow: 0 0 0 2px rgba(34,211,238,0.25); }
 
 .text-input::placeholder {
   color: #888;
 }
 
-.search-button {
-  padding: 0.7rem 1.5rem;
-  border: none;
-  border-radius: 5px;
-  background-color: #61dafb;
-  color: black;
-  font-size: 1rem;
-  cursor: pointer;
-}
+.search-button { padding: 0.7rem 1.5rem; border: none; border-radius: 8px; background: linear-gradient(135deg,#0ea5e9,#22d3ee); color: #0a0a0a; font-size: 1rem; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.25);} 
 
-.search-button:hover {
-  background-color: #21a1f1;
-}
+.search-button:hover { filter: brightness(1.05); }
 
 .results-container {
   max-width: 900px;
@@ -159,6 +156,7 @@ select, .text-input {
 .sort-buttons {
   display: flex;
   gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 .sort-buttons button {
@@ -211,7 +209,8 @@ select, .text-input {
 .results-table {
   width: 100%;
   border-collapse: collapse;
-  background-color: #3b3b3b;
+    background-color: #3b3b3b;
+    table-layout: fixed; /* mobilde taşmayı azalt */
   border-radius: 5px;
   overflow: hidden;
   margin-top: 1rem;
@@ -245,7 +244,8 @@ select, .text-input {
   color: #61dafb;
   text-decoration: none;
   font-size: 0.85rem;
-  word-break: break-all;
+    word-break: break-all; /* dar ekranda kır */
+    display: inline-block;
 }
 
 .map-url:hover {
@@ -257,21 +257,57 @@ select, .text-input {
 @media (max-width: 768px) {
   .results-table {
     font-size: 0.9rem;
+    table-layout: fixed;
   }
   
   .results-table th,
   .results-table td {
     padding: 0.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Mobilde yatay kaydırma */
   .results-container {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
   
   .results-table {
-    min-width: 600px;
+    min-width: 600px; /* minimum genişlik */
   }
+
+  /* URL sütununu gizle (4. sütun) */
+  .results-table th:nth-child(4),
+  .results-table td:nth-child(4) {
+    display: none;
+  }
+
+  /* Sütun genişlikleri: Ad %50, Yorum %25, Puan %25  */
+  .results-table th:nth-child(1), .results-table td:nth-child(1) { width: 50%; }
+  .results-table th:nth-child(2), .results-table td:nth-child(2) { width: 25%; }
+  .results-table th:nth-child(3), .results-table td:nth-child(3) { width: 25%; }
+
+  /* Başlık ve sıralama butonları dikey hizalansın */
+  .results-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .sort-buttons { flex-wrap: wrap; }
+}
+
+/* Mobil akordeon stilleri */
+@media (max-width: 768px) {
+  .mobile-accordion { display: flex; flex-direction: column; gap: 0.6rem; }
+  .acc-item { border: 1px solid #1f2937; border-radius: 10px; overflow: hidden; background: #0f172a; }
+  .acc-header { width: 100%; background: transparent; color: #e5e7eb; border: none; display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 1rem; font-size: 0.95rem; cursor: pointer; }
+  .acc-header:focus { outline: 1px solid #22d3ee; }
+  .acc-title { text-align: left; }
+  .acc-indicator { color: #22d3ee; font-weight: bold; }
+  .acc-body { padding: 0.75rem 1rem 1rem; display: grid; grid-template-columns: 1fr auto; row-gap: 0.5rem; column-gap: 0.75rem; }
+  .acc-row { display: contents; }
+  .acc-label { color: #9ca3af; }
+  .acc-value { color: #e5e7eb; text-align: right; }
+  .acc-link { margin-top: 0.5rem; grid-column: 1 / -1; color: #22d3ee; text-decoration: none; font-size: 0.9rem; }
+  .acc-link:hover { text-decoration: underline; }
 }
 
 .history-item {

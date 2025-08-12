@@ -48,7 +48,7 @@ class GoogleSheetsRestaurantScraper:
         
         logger.info("GoogleSheetsRestaurantScraper başlatıldı")
     
-    def search_restaurants(self, location, restaurant_type, radius=2000, min_rating=4.5, restaurant_name=None):
+    def search_restaurants(self, location, restaurant_type, radius=2000, min_rating=4.5, restaurant_name=None, full_scan=False):
         """
         Google Maps'te restoran arar
         
@@ -69,89 +69,208 @@ class GoogleSheetsRestaurantScraper:
             location_parts = location.split(',')
             district = location_parts[0].strip() if location_parts else location
             
-            # Text search kullan - daha spesifik sonuçlar için
-            if restaurant_name and restaurant_type != "restaurant":
-                # Hem restoran adı hem yemek türü belirtilmişse
-                query = f"{restaurant_name} {restaurant_type} in {location}"
-            elif restaurant_name:
-                # Sadece restoran adı belirtilmişse
-                query = f"{restaurant_name} in {location}"
-            else:
-                # Sadece yemek türü belirtilmişse
-                query = f"{restaurant_type} in {location}"
-            
-            logger.info(f"{location}'da {restaurant_type} aranıyor...")
-            if restaurant_name:
-                logger.info(f"Restoran adı filtresi: {restaurant_name}")
-            logger.info(f"Search query: {query}")
-            
-            # Text search ile ara - pagination ile tüm sonuçları al
+            # Arama terimlerini belirle
             all_places = []
-            next_page_token = None
-            max_pages = 3  # Maksimum 3 sayfa (60 sonuç)
-            current_page = 0
-            
-            while current_page < max_pages:
-                if current_page == 0:
-                    # İlk sayfa
-                    places_result = self.gmaps.places(
-                        query=query,
-                        type='restaurant',
-                        language='tr'
-                    )
-                else:
-                    # Sonraki sayfalar için next_page_token gerekli
-                    if not next_page_token:
-                        break
-                    
-                    # Token kullanmadan önce kısa bir bekleme (Google API requirement)
-                    import time
-                    time.sleep(2)
-                    
-                    places_result = self.gmaps.places(
-                        query=query,
-                        type='restaurant',
-                        language='tr',
-                        page_token=next_page_token
-                    )
-                
-                current_results = places_result.get('results', [])
-                all_places.extend(current_results)
-                
-                next_page_token = places_result.get('next_page_token')
-                current_page += 1
-                
-                logger.info(f"Sayfa {current_page}: {len(current_results)} sonuç, toplam: {len(all_places)}")
-                
-                # Eğer next_page_token yoksa dur
-                if not next_page_token:
-                    break
+            seen_place_ids = set()  # Duplicate kontrolü için
+
+            # Eğer kullanıcı sadece restoran adı girdiyse, adı genişleterek ara
+            if restaurant_name and not restaurant_type and not full_scan:
+                expanded_terms = self._expand_search_terms(restaurant_name)
+                logger.info(f"(İsim) Genişletilmiş arama terimleri: {expanded_terms}")
+
+                for term in [t for t in expanded_terms if t]:
+                    # "köfte", "köfteci" vb. için sorgu
+                    query = f"{term} in {location}"
+                    logger.info(f"Arama sorgusu: {query}")
+
+                    try:
+                        # Text Search + pagination (max 3 sayfa)
+                        next_page_token = None
+                        page_count = 0
+                        while page_count < 3:
+                            kwargs = {'query': query, 'type': 'restaurant', 'language': 'tr'}
+                            if next_page_token:
+                                kwargs['page_token'] = next_page_token
+                                time.sleep(2)  # Google next_page_token gereksinimi
+                            places_result = self.gmaps.places(**kwargs)
+
+                            current_results = places_result.get('results', [])
+                            for place in current_results:
+                                place_id = place.get('place_id')
+                                if place_id and place_id not in seen_place_ids:
+                                    all_places.append(place)
+                                    seen_place_ids.add(place_id)
+
+                            next_page_token = places_result.get('next_page_token')
+                            page_count += 1
+                            if not next_page_token:
+                                break
+                    except Exception as e:
+                        logger.warning(f"'{term}' arama terimi için hata: {str(e)}")
+                        continue
+
+            elif not (restaurant_name and not restaurant_type and full_scan):
+                # Yemek türüne göre ya da hem isim+ tür birlikte
+                expanded_terms = self._expand_search_terms(restaurant_type)
+                logger.info(f"Genişletilmiş arama terimleri: {expanded_terms}")
+
+                for search_term in [t for t in expanded_terms if t]:
+                    if restaurant_name and search_term != "restaurant":
+                        query = f"{restaurant_name} {search_term} in {location}"
+                    elif restaurant_name:
+                        query = f"{restaurant_name} in {location}"
+                    else:
+                        query = f"{search_term} in {location}"
+
+                    logger.info(f"Arama sorgusu: {query}")
+                    try:
+                        next_page_token = None
+                        page_count = 0
+                        while page_count < 3:
+                            kwargs = {'query': query, 'type': 'restaurant', 'language': 'tr'}
+                            if next_page_token:
+                                kwargs['page_token'] = next_page_token
+                                time.sleep(2)
+                            places_result = self.gmaps.places(**kwargs)
+
+                            current_results = places_result.get('results', [])
+                            for place in current_results:
+                                place_id = place.get('place_id')
+                                if place_id and place_id not in seen_place_ids:
+                                    all_places.append(place)
+                                    seen_place_ids.add(place_id)
+
+                            next_page_token = places_result.get('next_page_token')
+                            page_count += 1
+                            if not next_page_token:
+                                break
+                    except Exception as e:
+                        logger.warning(f"'{search_term}' arama terimi için hata: {str(e)}")
+                        continue
+
+            # Şehir genelinde grid tabanlı full scan (isteğe bağlı, daha fazla sonuç ama maliyetli)
+            if restaurant_name and not restaurant_type and full_scan:
+                logger.info("Full scan: grid tabanlı yakın çevre araması başlıyor")
+                bounds = self._get_city_bounds(location)
+                if not bounds:
+                    # İstanbul varsay
+                    bounds = {'north': 41.34, 'south': 40.80, 'east': 29.70, 'west': 27.80}
+                grid_centers = self._generate_grid_centers(bounds, rows=3, cols=3)
+                expanded_terms = self._expand_search_terms(restaurant_name)
+
+                for center in grid_centers:
+                    for term in [t for t in expanded_terms if t]:
+                        try:
+                            next_page_token = None
+                            page_count = 0
+                            while page_count < 3:
+                                kwargs = {
+                                    'location': center,
+                                    'radius': radius,
+                                    'keyword': term,
+                                    'type': 'restaurant'
+                                }
+                                if next_page_token:
+                                    kwargs['page_token'] = next_page_token
+                                    time.sleep(2)
+                                nearby_result = self.gmaps.places_nearby(**kwargs)
+
+                                current_results = nearby_result.get('results', [])
+                                for place in current_results:
+                                    place_id = place.get('place_id')
+                                    if place_id and place_id not in seen_place_ids:
+                                        all_places.append(place)
+                                        seen_place_ids.add(place_id)
+
+                                next_page_token = nearby_result.get('next_page_token')
+                                page_count += 1
+                                if not next_page_token:
+                                    break
+                        except Exception as e:
+                            logger.warning(f"Full scan nearby hata: {str(e)}")
+                            continue
             
             logger.info(f"Toplam Google API sonucu: {len(all_places)}")
             
-            # Sonuçları filtrele - sadece belirtilen ilçedeki restoranları al
+            # Sonuçları filtrele - ilçe, isim ve arama terimine uygunluk kontrolü
             filtered_results = []
-            seen_places = set()  # Duplicate kontrolü için
             
             for place in all_places:
-                # Adres kontrolü
+                # Adres ve isim kontrolü
                 address = place.get('formatted_address', '').lower()
                 place_name = place.get('name', '').lower()
                 place_id = place.get('place_id')
                 
-                # Duplicate kontrolü - place_id ile
-                if place_id in seen_places:
-                    continue
-                
                 # İlçe kontrolü (sadece district belirtilmişse)
-                if len(location_parts) > 1 and district.lower() not in address:
-                    continue
+                if len(location_parts) > 1:
+                    district_lower = district.lower()
+                    # Daha esnek ilçe kontrolü
+                    district_found = False
+                    
+                    # 1. Direkt adres kontrolü
+                    if district_lower in address:
+                        district_found = True
+                    
+                    # 2. Normalized kontrol
+                    address_normalized = self._normalize_turkish_text(address)
+                    district_normalized = self._normalize_turkish_text(district)
+                    if district_normalized in address_normalized:
+                        district_found = True
+                    
+                    # 3. İlçe varyasyonları kontrolü
+                    district_variations = self._get_district_variations(district_normalized)
+                    for variation in district_variations:
+                        if variation in address_normalized:
+                            district_found = True
+                            break
+                    
+                    if not district_found:
+                        continue
                 
                 # Restoran adı filtresi (eğer belirtilmişse)
-                if restaurant_name and restaurant_name.lower() not in place_name:
-                    continue
+                if restaurant_name:
+                    restaurant_name_lower = restaurant_name.lower()
+                    restaurant_name_normalized = self._normalize_turkish_text(restaurant_name)
+                    place_name_normalized = self._normalize_turkish_text(place_name)
+                    
+                    name_found = (restaurant_name_lower in place_name or 
+                                restaurant_name_normalized in place_name_normalized)
+                    
+                    if not name_found:
+                        continue
                 
-                seen_places.add(place_id)
+                # Yemek türü ile isim uyumluluğunu kontrol et (daha akıllı filtreleme)
+                if restaurant_type and restaurant_type != "restaurant":
+                    type_match = False
+                    place_name_normalized = self._normalize_turkish_text(place_name)
+                    
+                    # Genişletilmiş terimlerle kontrol
+                    for term in expanded_terms:
+                        term_normalized = self._normalize_turkish_text(term)
+                        if term_normalized in place_name_normalized:
+                            type_match = True
+                            break
+                    
+                    # Eğer restoran adında arama terimi yoksa, genel restoran kategorisinden kabul et
+                    if not type_match:
+                        general_terms = ['restoran', 'restaurant', 'lokanta', 'yemek evi', 'evi', 'salonu']
+                        for general_term in general_terms:
+                            if general_term in place_name_normalized:
+                                type_match = True
+                                break
+                    
+                    # Çok katı olmayalım - eğer bu noktaya kadar geldiyse muhtemelen ilgili bir restoran
+                    if not type_match:
+                        # Puan yüksekse veya yorum sayısı fazlaysa kabul et
+                        rating = place.get('rating', 0)
+                        review_count = place.get('user_ratings_total', 0)
+                        if rating >= 4.0 and review_count >= 50:
+                            type_match = True
+                    
+                    # Hala eşleşme yoksa bu restoranı geç
+                    if not type_match:
+                        continue
+                
                 filtered_results.append(place)
             
             # Filtrelenmiş sonuçları işle
@@ -173,6 +292,7 @@ class GoogleSheetsRestaurantScraper:
                     )
                     
                     # Nearby sonuçları da filtrele
+                    seen_places = set([r.get('place_id') for r in restaurants])
                     for place in nearby_result.get('results', []):
                         address = place.get('vicinity', '').lower()
                         place_name = place.get('name', '').lower()
@@ -606,3 +726,167 @@ class GoogleSheetsRestaurantScraper:
                 break
         
         return list(set(variations))  # Tekrarları kaldır
+    
+    def _is_location_in_bounds(self, lat, lng, city, district=None):
+        """Verilen koordinatın belirtilen şehir/ilçe sınırları içinde olup olmadığını kontrol eder"""
+        try:
+            # İstanbul için genel sınırlar
+            if city.lower() in ['istanbul', 'İstanbul']:
+                istanbul_bounds = {
+                    'north': 41.34, 'south': 40.80,
+                    'east': 29.70, 'west': 27.80
+                }
+                
+                if not (istanbul_bounds['south'] <= lat <= istanbul_bounds['north'] and
+                        istanbul_bounds['west'] <= lng <= istanbul_bounds['east']):
+                    return False
+                
+                # İlçe bazlı detaylı kontrol (sadece bazı büyük ilçeler için)
+                if district:
+                    district_bounds = self._get_district_bounds(district.lower())
+                    if district_bounds:
+                        return (district_bounds['south'] <= lat <= district_bounds['north'] and
+                                district_bounds['west'] <= lng <= district_bounds['east'])
+            
+            return True  # Diğer şehirler için şimdilik true
+            
+        except Exception as e:
+            logger.error(f"Lokasyon sınır kontrolü hatası: {str(e)}")
+            return True  # Hata durumunda filtreleme yapma
+    
+    def _get_district_bounds(self, district):
+        """İlçe sınırlarını döner (yaklaşık)"""
+        district_bounds = {
+            'kadikoy': {'north': 40.99, 'south': 40.94, 'east': 29.09, 'west': 29.02},
+            'besiktas': {'north': 41.08, 'south': 41.03, 'east': 29.02, 'west': 28.98},
+            'sisli': {'north': 41.06, 'south': 41.04, 'east': 28.99, 'west': 28.96},
+            'fatih': {'north': 41.02, 'south': 40.99, 'east': 28.98, 'west': 28.93},
+            'uskudar': {'north': 41.04, 'south': 40.98, 'east': 29.06, 'west': 29.01},
+            'beyoglu': {'north': 41.04, 'south': 41.01, 'east': 28.99, 'west': 28.95},
+            'maltepe': {'north': 40.96, 'south': 40.92, 'east': 29.15, 'west': 29.10},
+            'pendik': {'north': 40.91, 'south': 40.86, 'east': 29.26, 'west': 29.21},
+            'kartal': {'north': 40.91, 'south': 40.87, 'east': 29.21, 'west': 29.16},
+            'tuzla': {'north': 40.87, 'south': 40.82, 'east': 29.32, 'west': 29.27}
+        }
+        
+        # Normalize edilmiş district name ile karşılaştır
+        district_normalized = self._normalize_turkish_text(district)
+        return district_bounds.get(district_normalized)
+
+    def _get_city_bounds(self, city):
+        """Şehir genel sınırları (yaklaşık)"""
+        city_norm = self._normalize_turkish_text(city)
+        if 'istanbul' in city_norm:
+            return {'north': 41.34, 'south': 40.80, 'east': 29.70, 'west': 27.80}
+        return None
+
+    def _generate_grid_centers(self, bounds, rows=3, cols=3):
+        """Verilen sınırlar içinde grid merkezleri üretir"""
+        centers = []
+        lat_step = (bounds['north'] - bounds['south']) / (rows + 1)
+        lng_step = (bounds['east'] - bounds['west']) / (cols + 1)
+        for r in range(1, rows + 1):
+            for c in range(1, cols + 1):
+                centers.append({
+                    'lat': bounds['south'] + r * lat_step,
+                    'lng': bounds['west'] + c * lng_step
+                })
+        return centers
+    
+    def _expand_search_terms(self, restaurant_type):
+        """
+        Arama terimini genişletir ve benzeri kelimeleri ekler
+        Örnek: 'köfte' -> ['köfte', 'köfteci', 'köftecisi', 'köfte salonu']
+        """
+        if not restaurant_type:
+            return [restaurant_type]
+        
+        base_term = restaurant_type.lower().strip()
+        expanded_terms = [base_term]
+        
+        # Yemek türü genişletme sözlüğü
+        expansion_map = {
+            # Et ürünleri
+            'köfte': ['köfte', 'köfteci', 'köftecisi', 'köfte salonu', 'köfte evi', 'kofte'],
+            'kebap': ['kebap', 'kebapçı', 'kebapçısı', 'kebap salonu', 'kebab', 'kebapci'],
+            'döner': ['döner', 'dönerci', 'dönercisi', 'döner salonu', 'donercisi'],
+            'iskender': ['iskender', 'iskenderi', 'iskender kebap', 'iskender salonu'],
+            'lahmacun': ['lahmacun', 'lahmacuncu', 'lahmacuncusu', 'lahmacun evi'],
+            'tantuni': ['tantuni', 'tantunici', 'tantunicisi'],
+            'çiğköfte': ['çiğköfte', 'çiğ köfte', 'çiğ köfteci', 'cigkofte'],
+            'çiğ köfte': ['çiğköfte', 'çiğ köfte', 'çiğ köfteci', 'cigkofte'],
+            'kokoreç': ['kokoreç', 'kokoreci', 'kokorecçisi'],
+            
+            # Hamur işleri
+            'pide': ['pide', 'pideci', 'pidecisi', 'pide salonu', 'pide evi'],
+            'börek': ['börek', 'börekçi', 'börekçisi', 'börek evi', 'borek'],
+            'gözleme': ['gözleme', 'gözlemeci', 'gözlemecisi', 'gozleme'],
+            'mantı': ['mantı', 'mantıcı', 'mantıcısı', 'manti'],
+            
+            # Deniz ürünleri
+            'balık': ['balık', 'balık restoranı', 'balık evi', 'balıkçı', 'balık lokantası', 'balik'],
+            'midye': ['midye', 'midyeci', 'midyecisi', 'midye tava'],
+            'deniz ürünleri': ['deniz ürünleri', 'deniz urunleri', 'seafood', 'balık'],
+            
+            # Tatlı ve fırın
+            'dondurma': ['dondurma', 'dondurmacı', 'dondurmacısı', 'dondurma salonu', 'ice cream'],
+            'tatlı': ['tatlı', 'tatlıcı', 'tatlıcısı', 'tatlı evi', 'tatli'],
+            'baklava': ['baklava', 'baklavacı', 'baklavacısı'],
+            'künefe': ['künefe', 'künefeci', 'künefecisi', 'kunefe'],
+            'pasta': ['pasta', 'pastane', 'pastahanesi', 'pasta evi'],
+            'sütlaç': ['sütlaç', 'sütlaççı', 'sütlaççısı', 'sutlac'],
+            
+            # Kahvaltı
+            'kahvaltı': ['kahvaltı', 'kahvaltıcı', 'kahvaltı evi', 'serpme kahvaltı', 'kahvalti'],
+            'brunch': ['brunch', 'kahvaltı', 'breakfast'],
+            
+            # Fast food
+            'burger': ['burger', 'hamburger', 'burgerci', 'burger king'],
+            'pizza': ['pizza', 'pizzacı', 'pizzeria', 'pizza evi'],
+            'sandwich': ['sandwich', 'sandviç', 'sandwiç', 'sandvici'],
+            'toast': ['toast', 'toastçı', 'toastçısı', 'tost'],
+            'waffle': ['waffle', 'wafleci', 'waffle evi'],
+            
+            # Dünya mutfağı
+            'sushi': ['sushi', 'suşi', 'japon', 'japon mutfağı'],
+            'pizza': ['pizza', 'pizzacı', 'pizzeria', 'italyan'],
+            'çin': ['çin', 'çin mutfağı', 'chinese', 'noodle'],
+            'hint': ['hint', 'hint mutfağı', 'indian', 'curry'],
+            'meksika': ['meksika', 'meksika mutfağı', 'mexican', 'taccos'],
+            
+            # Kahve ve içecek
+            'kafe': ['kafe', 'cafe', 'kahve', 'coffee', 'kahveci'],
+            'kahve': ['kahve', 'coffee', 'kafe', 'cafe', 'kahveci'],
+            'çay': ['çay', 'çayhane', 'çay evi', 'tea'],
+            
+            # Genel kategoriler
+            'restoran': ['restoran', 'restaurant', 'lokanta', 'yemek evi'],
+            'lokanta': ['lokanta', 'restoran', 'restaurant', 'yemek evi'],
+            'meyhane': ['meyhane', 'taverna', 'rakı balık'],
+            'ocakbaşı': ['ocakbaşı', 'ocakbasi', 'mangal', 'ızgara']
+        }
+        
+        # Eğer base_term expansion_map'te varsa, genişletilmiş terimleri ekle
+        if base_term in expansion_map:
+            expanded_terms.extend(expansion_map[base_term])
+        
+        # Ayrıca temel kelimeye "-ci", "-cı", "-cisi" eklerini de dene
+        base_word = base_term
+        
+        # Sonunda "ci" veya "cı" yoksa ekle
+        if not any(base_word.endswith(suffix) for suffix in ['ci', 'cı', 'cisi', 'cısı']):
+            # Son harfe göre uygun eki seç
+            last_char = base_word[-1] if base_word else ''
+            if last_char in ['a', 'e', 'i', 'o', 'u']:
+                expanded_terms.append(base_word + 'ci')
+                expanded_terms.append(base_word + 'cisi')
+            else:
+                expanded_terms.append(base_word + 'cı')
+                expanded_terms.append(base_word + 'cısı')
+        
+        # Eğer kelime "restaurant" değilse, "restaurant" ve "lokanta" da ekle
+        if base_term not in ['restoran', 'restaurant', 'lokanta']:
+            expanded_terms.extend(['restoran', 'restaurant', 'lokanta'])
+        
+        # Tekrarları kaldır ve listeyi döndür
+        return list(set(expanded_terms))

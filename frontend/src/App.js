@@ -20,6 +20,9 @@ function App() {
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [loading2, setLoading2] = useState(false); // Daha fazla yükleme için
+  const [fetchAll, setFetchAll] = useState(false); // Tümünü getir (fullScan)
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth <= 768 : false);
+  const [openRows, setOpenRows] = useState({});
 
   const API_BASE_URL = process.env.NODE_ENV === 'production' 
     ? '/api' 
@@ -30,6 +33,10 @@ function App() {
     fetchCities();
     fetchFoodTypes();
     loadSearchHistory();
+    // Responsive kontrol
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchCities = async () => {
@@ -122,7 +129,8 @@ function App() {
         minRating: minRating,
         saveToSheets: saveToSheets,
         page: page,
-        perPage: 20
+        perPage: fetchAll ? 500 : 20,
+        fullScan: fetchAll
       };
       
       const response = await fetch(url, {
@@ -164,7 +172,7 @@ function App() {
           });
         }
         
-        setHasMore(data.hasMore || false);
+        setHasMore(fetchAll ? false : (data.hasMore || false));
         setTotalCount(data.totalCount || formattedResults.length);
         
         if (saveToSheets && data.sheetName) {
@@ -191,7 +199,6 @@ function App() {
     <div className="App">
       <div className="container">
         <h1 className="title">🍴 Restoran Bulucu</h1>
-        <p className="subtitle">4.5+ puanlı restoranları bulun</p>
         
         <div className="search-container">
           <div className="form-group">
@@ -248,7 +255,7 @@ function App() {
               type="text"
               value={restaurantName} 
               onChange={(e) => setRestaurantName(e.target.value)}
-              className="text-input"
+              className="text-input light-input"
               placeholder="Örn: pideci, konya, sultanahmet..."
             />
           </div>
@@ -280,6 +287,17 @@ function App() {
                 onChange={(e) => setSaveToSheets(e.target.checked)}
               />
               Google Sheets'e Kaydet
+            </label>
+          </div>
+
+          <div className="form-group checkbox-group">
+            <label>
+              <input 
+                type="checkbox" 
+                checked={fetchAll}
+                onChange={(e) => setFetchAll(e.target.checked)}
+              />
+              Tüm sonuçları tek seferde getir (yavaş olabilir)
             </label>
           </div>
 
@@ -335,35 +353,66 @@ function App() {
                 </button>
               </div>
             </div>
-            <table className="results-table">
-              <thead>
-                <tr>
-                  <th>Restoran Adı</th>
-                  <th>Toplam Yorum Sayısı</th>
-                  <th>Beğeni Puanı</th>
-                  <th>Google Maps URL</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((restaurant, index) => (
-                  <tr key={index}>
-                    <td>{restaurant.name}</td>
-                    <td>{restaurant.reviewCount}</td>
-                    <td>{restaurant.rating}</td>
-                    <td>
-                      <a 
-                        href={restaurant.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="map-url"
-                      >
-                        {restaurant.url}
-                      </a>
-                    </td>
+
+            {!isMobile && (
+              <table className="results-table">
+                <thead>
+                  <tr>
+                    <th>Restoran Adı</th>
+                    <th>Toplam Yorum Sayısı</th>
+                    <th>Beğeni Puanı</th>
+                    <th>Google Maps URL</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {results.map((restaurant, index) => (
+                    <tr key={index}>
+                      <td>{restaurant.name}</td>
+                      <td>{restaurant.reviewCount}</td>
+                      <td>{restaurant.rating}</td>
+                      <td>
+                        <a 
+                          href={restaurant.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="map-url"
+                        >
+                          {restaurant.url}
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {isMobile && (
+              <div className="mobile-accordion">
+                {results.map((restaurant, index) => {
+                  const isOpen = !!openRows[index];
+                  return (
+                    <div className={`acc-item ${isOpen ? 'open' : ''}`} key={index}>
+                      <button
+                        className="acc-header"
+                        onClick={() => setOpenRows(prev => ({ ...prev, [index]: !prev[index] }))}
+                        aria-expanded={isOpen}
+                        aria-controls={`acc-body-${index}`}
+                      >
+                        <span className="acc-title">{restaurant.name}</span>
+                        <span className="acc-indicator">{isOpen ? '−' : '+'}</span>
+                      </button>
+                      {isOpen && (
+                        <div className="acc-body" id={`acc-body-${index}`}>
+                          <div className="acc-row"><span className="acc-label">Puan</span><span className="acc-value">{restaurant.rating}</span></div>
+                          <div className="acc-row"><span className="acc-label">Yorum</span><span className="acc-value">{restaurant.reviewCount}</span></div>
+                          <a href={restaurant.url} target="_blank" rel="noopener noreferrer" className="acc-link">Haritalarda Aç</a>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             
             {hasMore && (
               <div className="load-more-container">

@@ -3,13 +3,14 @@ import json
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        # Handle CORS
+        # Handle CORS + headers BEFORE writing body
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET')
+        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        
+
         cities = {
             'İstanbul': [
                 'Adalar', 'Arnavutköy', 'Ataşehir', 'Avcılar', 'Bağcılar', 'Bahçelievler',
@@ -31,7 +32,3 @@ class handler(BaseHTTPRequestHandler):
         
         response = json.dumps(cities)
         self.wfile.write(response.encode())
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
